@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>L-System Plant</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0a0e1a;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // Random parameters
+        function random(min, max) {
+            return Math.random() * (max - min) + min;
+        }
+
+        function randomInt(min, max) {
+            return Math.floor(random(min, max));
+        }
+
+        const params = {
+            iterations: randomInt(4, 5),
+            angle: random(25, 45),
+            length: random(8, 32),
+            scaleFactor: 0.75,
+            trunkHeight: random(10, 15)
+        };
+
+        // Color palettes - randomly select one
+        const colorPalettes = [
+            ['#e8f5e9', '#c8e6c9', '#a5d6a7', '#81c784', '#66bb6a', '#4caf50', '#43a047', '#388e3c'], // Green
+            ['#f1f8e9', '#dcedc8', '#c5e1a5', '#aed581', '#9ccc65', '#8bc34a', '#7cb342', '#689f38'], // Light Green
+            ['#e0f2f1', '#b2dfdb', '#80cbc4', '#4db6ac', '#26a69a', '#00897b', '#00796b', '#00695c'], // Teal
+            ['#fff9e6', '#ffeaa7', '#fdcb6e', '#f39c12', '#e67e22', '#d35400', '#c0392b', '#a93226'], // Orange
+            ['#fff59d', '#fff176', '#ffee58', '#ffeb3b', '#fdd835', '#fbc02d', '#f9a825', '#f57f17'], // Yellow
+            ['#fce4ec', '#f8bbd0', '#f48fb1', '#f06292', '#ec407a', '#e91e63', '#d81b60', '#c2185b'], // Pink
+            ['#ffebee', '#ffcdd2', '#ef9a9a', '#e57373', '#ef5350', '#f44336', '#e53935', '#d32f2f'], // Red
+            ['#e1bee7', '#ce93d8', '#ba68c8', '#ab47bc', '#9c27b0', '#8e24aa', '#7b1fa2', '#6a1b9a'], // Purple
+            ['#b3e5fc', '#81d4fa', '#4fc3f7', '#29b6f6', '#03a9f4', '#0288d1', '#0277bd', '#01579b'], // Cyan/Blue
+            ['#fff3e0', '#ffe0b2', '#ffcc80', '#ffb74d', '#ffa726', '#ff9800', '#fb8c00', '#f57c00'], // Amber
+            ['#f3e5f5', '#e1bee7', '#ce93d8', '#ba68c8', '#ab47bc', '#9c27b0', '#8e24aa', '#7b1fa2'], // Lavender
+            ['#ffccbc', '#ffab91', '#ff8a65', '#ff7043', '#ff5722', '#f4511e', '#e64a19', '#bf360c'], // Deep Orange
+            ['#00ff00', '#ff00ff', '#00ffff', '#ffff00', '#ff0080', '#8000ff', '#ff8000', '#00ff80']  // Funky Neon Rainbow
+        ];
+        
+        const colors = colorPalettes[randomInt(0, colorPalettes.length - 1)];
+        
+        // Convert hex to RGB for color manipulation
+        function hexToRgb(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16)
+            } : null;
+        }
+        
+        // Convert RGB to hex
+        function rgbToHex(r, g, b) {
+            return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+        }
+        
+        // Create color variation by adjusting brightness and saturation
+        function varyColor(hexColor, variation = 0) {
+            const rgb = hexToRgb(hexColor);
+            if (!rgb) return hexColor;
+            
+            // Create variation: slightly adjust each component
+            const variationRange = 40; // Maximum variation range
+            const r = Math.max(0, Math.min(255, rgb.r + random(-variationRange, variationRange) * variation));
+            const g = Math.max(0, Math.min(255, rgb.g + random(-variationRange, variationRange) * variation));
+            const b = Math.max(0, Math.min(255, rgb.b + random(-variationRange, variationRange) * variation));
+            
+            return rgbToHex(Math.floor(r), Math.floor(g), Math.floor(b));
+        }
+
+        // L-System rules
+        const rules = [
+            { axiom: 'F', rule: 'F[F+F]F[++F][+F][-F][--F]' },
+            { axiom: 'F', rule: 'FF+[+F-F-F]-[-F+F+F]' },
+            { axiom: 'X', rule: 'F+[[X]-X]-F[-FX]+X', fRule: 'FF' },
+            { axiom: 'F', rule: 'F[F-F]F[[F-F][F+F]]' },
+            { axiom: 'F', rule: 'F[F+F]F[-+F][-F][+F][++F]' },
+            { axiom: 'F', rule: 'F[+F][-F]' },
+            { axiom: 'F', rule: 'FF[+F][-F]' },
+            { axiom: 'F', rule: 'F[++F][+F][F][-F][--F]' },
+            { axiom: 'F', rule: 'F[+F-F]F[-F+F]' },
+            { axiom: 'F', rule: 'F[+F]F[-F]F' }
+        ];
+        const selectedRule = rules[randomInt(0, rules.length)];
+
+        // Generate L-System string
+        function generateLSystem(iterations, axiom, rules) {
+            let current = axiom;
+            for (let i = 0; i < iterations; i++) {
+                let next = '';
+                for (let char of current) {
+                    next += rules[char] || char;
+                }
+                current = next;
+            }
+            return current;
+        }
+
+        // Collect segments for animation
+        function collectSegments(lSystemString) {
+            const startX = canvas.width / 2;
+            const startY = canvas.height - 50;
+            
+            const stack = [];
+            let x = startX;
+            let y = startY;
+            let angle = -90;
+            let length = params.length;
+            let depth = 0;
+            
+            const trunkThickness = 5;
+            const trunkTopY = startY - params.trunkHeight;
+            
+            const segments = [];
+            
+            // Add trunk
+            segments.push({
+                x1: startX,
+                y1: startY,
+                x2: startX,
+                y2: trunkTopY,
+                depth: -1, // Trunk has depth -1
+                thickness: trunkThickness,
+                color: colors[colors.length - 1]
+            });
+            
+            x = startX;
+            y = trunkTopY;
+            length = params.length;
+
+            // Collect all segments
+            for (let char of lSystemString) {
+                switch (char) {
+                    case 'F':
+                        // Cycle through colors based on depth/iteration for vibrant color changes
+                        const colorIndex = depth % colors.length;
+                        const baseColor = colors[colorIndex];
+                        
+                        // Add color variation based on angle and position for multicolor effect
+                        const angleVariation = Math.abs(angle) / 360; // Normalize angle
+                        const positionVariation = (x + y) / (canvas.width + canvas.height); // Normalize position
+                        const variationAmount = 0.6; // How much to vary (0-1)
+                        
+                        // Combine variations for unique color per branch
+                        const variationFactor = (angleVariation + positionVariation) / 2;
+                        const variedColor = varyColor(baseColor, variationFactor * variationAmount);
+                        
+                        const thickness = Math.max(1, trunkThickness * 0.6 * Math.pow(0.7, depth));
+                        
+                        const newX = x + Math.cos(angle * Math.PI / 180) * length;
+                        const newY = y + Math.sin(angle * Math.PI / 180) * length;
+                        
+                        segments.push({
+                            x1: x,
+                            y1: y,
+                            x2: newX,
+                            y2: newY,
+                            depth: depth,
+                            thickness: thickness,
+                            color: variedColor
+                        });
+                        
+                        x = newX;
+                        y = newY;
+                        break;
+
+                    case '+':
+                        angle += params.angle + random(-5, 10);
+                        break;
+
+                    case '-':
+                        angle -= params.angle + random(-5, 10);
+                        break;
+
+                    case '[':
+                        stack.push({ x, y, angle, length, depth });
+                        length *= params.scaleFactor;
+                        depth++;
+                        break;
+
+                    case ']':
+                        if (stack.length > 0) {
+                            const state = stack.pop();
+                            x = state.x;
+                            y = state.y;
+                            angle = state.angle;
+                            length = state.length;
+                            depth = state.depth;
+                        }
+                        break;
+                }
+            }
+            
+            return segments;
+        }
+
+        // Animate plant drawing
+        function animatePlant(segments) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            
+            // Group segments by depth
+            const segmentsByDepth = {};
+            let maxDepth = -1;
+            
+            for (let segment of segments) {
+                const depth = segment.depth;
+                if (!segmentsByDepth[depth]) {
+                    segmentsByDepth[depth] = [];
+                }
+                segmentsByDepth[depth].push(segment);
+                maxDepth = Math.max(maxDepth, depth);
+            }
+            
+            // Animate segments progressively
+            let currentDepth = -1;
+            let segmentIndexInDepth = 0;
+            let drawnSegments = [];
+            const segmentsPerFrame = 32; // Draw multiple segments per frame for faster animation
+            let animationComplete = false;
+            
+            function animate() {
+                // Clear and redraw all previously drawn segments
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                // Draw all segments drawn so far
+                for (let segment of drawnSegments) {
+                    ctx.strokeStyle = segment.color;
+                    ctx.lineWidth = segment.thickness;
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(segment.x1, segment.y1);
+                    ctx.lineTo(segment.x2, segment.y2);
+                    ctx.stroke();
+                }
+                
+                // Draw signature
+                ctx.font = '16px Arial';
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+                ctx.textAlign = 'right';
+                ctx.textBaseline = 'bottom';
+                ctx.fillText('Bassell - 01/11/2025', canvas.width - 10, canvas.height - 10);
+                
+                // Add multiple segments per frame for faster animation
+                for (let i = 0; i < segmentsPerFrame; i++) {
+                    if (segmentsByDepth[currentDepth] && segmentIndexInDepth < segmentsByDepth[currentDepth].length) {
+                        const segment = segmentsByDepth[currentDepth][segmentIndexInDepth];
+                        drawnSegments.push(segment);
+                        segmentIndexInDepth++;
+                    } else {
+                        // Move to next depth
+                        currentDepth++;
+                        segmentIndexInDepth = 0;
+                        
+                        // If we've reached max depth, stop adding segments
+                        if (currentDepth > maxDepth) {
+                            animationComplete = true;
+                            break;
+                        }
+                    }
+                }
+                
+                // Continue animation if there are more segments
+                if (!animationComplete) {
+                    requestAnimationFrame(animate);
+                } else {
+                    // Animation complete - wait 2 seconds then refresh to generate new tree
+                    setTimeout(() => {
+                        location.reload();
+                    }, 2000);
+                }
+            }
+            
+            // Start animation from trunk
+            currentDepth = -1;
+            segmentIndexInDepth = 0;
+            animate();
+        }
+
+
+        // Build rules object
+        const lSystemRules = { 'X': selectedRule.rule };
+        if (selectedRule.fRule) {
+            lSystemRules['F'] = selectedRule.fRule;
+        } else {
+            lSystemRules['F'] = selectedRule.rule;
+        }
+
+        // Generate and animate initial tree
+        const lSystemString = generateLSystem(params.iterations, selectedRule.axiom, lSystemRules);
+        const segments = collectSegments(lSystemString);
+        animatePlant(segments);
+    </script>
+</body>
+</html>
